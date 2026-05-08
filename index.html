@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DocScan OCR Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,300&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0c0e14;
+  --surface: #12151e;
+  --surface2: #1a1e2e;
+  --border: #252a3d;
+  --accent: #4361ee;
+  --accent2: #7b5ea7;
+  --accent3: #06d6a0;
+  --danger: #ef4444;
+  --text: #e2e8f0;
+  --text-dim: #6b7280;
+  --text-muted: #374151;
+  --mono: 'Space Mono', monospace;
+  --sans: 'DM Sans', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Grid bg ── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(67,97,238,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(67,97,238,0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+header {
+  position: relative;
+  z-index: 10;
+  border-bottom: 1px solid var(--border);
+  padding: 18px 40px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: rgba(12,14,20,0.9);
+  backdrop-filter: blur(12px);
+}
+
+.logo {
+  width: 36px; height: 36px;
+  background: var(--accent);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -1px;
+  flex-shrink: 0;
+}
+
+header h1 {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text);
+}
+
+header span {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text-dim);
+  font-weight: 300;
+}
+
+.pill {
+  margin-left: auto;
+  background: rgba(6,214,160,0.1);
+  border: 1px solid rgba(6,214,160,0.25);
+  color: var(--accent3);
+  font-size: 11px;
+  font-family: var(--mono);
+  padding: 3px 10px;
+  border-radius: 100px;
+}
+
+/* ── Layout ── */
+.layout {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  min-height: calc(100vh - 73px);
+}
+
+/* ── Left panel ── */
+.panel-left {
+  border-right: 1px solid var(--border);
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  background: var(--surface);
+}
+
+.section-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+/* Drop zone */
+.drop-zone {
+  border: 1.5px dashed var(--border);
+  border-radius: 12px;
+  padding: 40px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  background: var(--surface2);
+}
+
+.drop-zone:hover, .drop-zone.dragging {
+  border-color: var(--accent);
+  background: rgba(67,97,238,0.06);
+}
+
+.drop-zone input[type=file] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+
+.drop-icon {
+  width: 48px; height: 48px;
+  margin: 0 auto 16px;
+  background: rgba(67,97,238,0.12);
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+}
+
+.drop-zone h3 {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.drop-zone p {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* Preview */
+#preview-wrap {
+  display: none;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  position: relative;
+}
+
+#preview-wrap img {
+  width: 100%;
+  display: block;
+  max-height: 220px;
+  object-fit: cover;
+}
+
+.preview-badge {
+  position: absolute;
+  top: 8px; right: 8px;
+  background: rgba(12,14,20,0.85);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: var(--text-dim);
+}
+
+/* Options */
+.options-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.opt-group label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.opt-group select, .opt-group input[type=checkbox] {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  appearance: none;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.opt-group select:focus { border-color: var(--accent); }
+
+.toggle-row {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.toggle {
+  width: 36px; height: 20px;
+  background: var(--border);
+  border-radius: 100px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.toggle.active { background: var(--accent); }
+
+.toggle::after {
+  content: '';
+  position: absolute;
+  width: 14px; height: 14px;
+  background: white;
+  border-radius: 50%;
+  top: 3px; left: 3px;
+  transition: transform 0.2s;
+}
+
+.toggle.active::after { transform: translateX(16px); }
+
+/* Submit */
+#submit-btn {
+  width: 100%;
+  padding: 13px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+#submit-btn:hover { background: #3451d1; transform: translateY(-1px); }
+#submit-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+#submit-btn .btn-inner {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+
+/* ── Right panel ── */
+.panel-right {
+  padding: 32px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  overflow-y: auto;
+}
+
+/* State: empty */
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-dim);
+}
+
+.empty-state .big-icon { font-size: 48px; opacity: 0.3; }
+.empty-state p { font-size: 13px; }
+
+/* Progress */
+#progress-wrap {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.progress-step {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 13px;
+  opacity: 0.35;
+  transition: opacity 0.3s;
+}
+
+.progress-step.active { opacity: 1; }
+.progress-step.done { opacity: 0.6; }
+
+.step-dot {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px;
+  font-family: var(--mono);
+  flex-shrink: 0;
+  transition: all 0.3s;
+}
+
+.progress-step.active .step-dot {
+  border-color: var(--accent);
+  background: rgba(67,97,238,0.15);
+  color: var(--accent);
+  animation: pulse 1.5s infinite;
+}
+
+.progress-step.done .step-dot {
+  border-color: var(--accent3);
+  background: rgba(6,214,160,0.1);
+  color: var(--accent3);
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(67,97,238,0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(67,97,238,0); }
+}
+
+/* ── Results ── */
+#results-wrap { display: none; flex-direction: column; gap: 20px; }
+
+.result-header {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px;
+}
+
+.result-header h2 {
+  font-family: var(--mono);
+  font-size: 16px;
+  display: flex; align-items: center; gap: 10px;
+}
+
+.success-dot {
+  width: 8px; height: 8px;
+  background: var(--accent3);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--accent3);
+}
+
+.export-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.export-btn {
+  padding: 7px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: var(--mono);
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  text-decoration: none;
+  transition: all 0.15s;
+  display: flex; align-items: center; gap: 6px;
+}
+
+.export-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Stat cards */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.stat-card .val {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.stat-card .lbl {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* Confidence bar */
+.conf-bar-wrap { margin-top: 8px; }
+.conf-bar-track {
+  height: 4px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+.conf-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent3));
+  border-radius: 4px;
+  transition: width 1s ease;
+}
+
+/* Tabs */
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); }
+
+.tab {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all 0.15s;
+}
+
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* Text output */
+.text-output {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--text);
+  white-space: pre-wrap;
+  max-height: 400px;
+  overflow-y: auto;
+  margin-top: 16px;
+}
+
+/* Entity chips */
+.entity-section { margin-top: 16px; }
+.entity-type {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  margin-top: 16px;
+}
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.chip {
+  background: rgba(67,97,238,0.1);
+  border: 1px solid rgba(67,97,238,0.25);
+  color: #93acff;
+  font-size: 11px;
+  font-family: var(--mono);
+  padding: 3px 10px;
+  border-radius: 100px;
+}
+
+/* Pipeline steps */
+.steps-list { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+
+.step-chip {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-family: var(--mono);
+  padding: 4px 10px;
+  border-radius: 6px;
+  display: flex; align-items: center; gap: 5px;
+}
+
+.step-chip::before { content: '→'; color: var(--accent3); }
+
+/* Error state */
+.error-box {
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.25);
+  border-radius: 10px;
+  padding: 16px 20px;
+  color: #fca5a5;
+  font-size: 13px;
+  display: none;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">DS</div>
+  <div>
+    <h1>DocScan OCR Pipeline</h1>
+    <span>Computer Vision · Tesseract/EasyOCR · NLP Post-processing</span>
+  </div>
+  <div class="pill">v1.0.0 ● ONLINE</div>
+</header>
+
+<div class="layout">
+  <!-- ── LEFT PANEL ── -->
+  <div class="panel-left">
+    <div>
+      <div class="section-label">01 / Upload Document</div>
+      <div class="drop-zone" id="drop-zone">
+        <input type="file" id="file-input" accept="image/*">
+        <div class="drop-icon">📄</div>
+        <h3>Drop image here</h3>
+        <p>PNG, JPG, TIFF, BMP, WEBP · max 16MB</p>
+      </div>
+      <div id="preview-wrap">
+        <img id="preview-img" src="" alt="Preview">
+        <div class="preview-badge" id="preview-badge">—</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">02 / Processing Options</div>
+      <div class="options-grid">
+        <div class="opt-group">
+          <label>OCR Engine</label>
+          <select id="ocr-engine">
+            <option value="tesseract">Tesseract</option>
+            <option value="easyocr">EasyOCR</option>
+          </select>
+        </div>
+        <div class="opt-group">
+          <label>Language</label>
+          <select id="language">
+            <option value="eng">English</option>
+            <option value="fra">French</option>
+            <option value="deu">German</option>
+            <option value="spa">Spanish</option>
+            <option value="chi_sim">Chinese (Simplified)</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top: 14px;">
+        <div class="toggle-row">
+          <div class="toggle active" id="enhance-toggle"></div>
+          <span>Image enhancement (CLAHE + denoise)</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">03 / Run Pipeline</div>
+      <div class="error-box" id="error-box"></div>
+      <button id="submit-btn" disabled>
+        <div class="btn-inner">
+          <span>⚡</span> <span id="btn-text">SELECT A FILE FIRST</span>
+        </div>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── RIGHT PANEL ── -->
+  <div class="panel-right">
+
+    <!-- Empty state -->
+    <div class="empty-state" id="empty-state">
+      <div class="big-icon">🔍</div>
+      <p>Upload a document image and run the pipeline to see results here.</p>
+    </div>
+
+    <!-- Progress -->
+    <div id="progress-wrap">
+      <div class="section-label">PROCESSING</div>
+      <div class="progress-step" id="step-upload">
+        <div class="step-dot">1</div>
+        <span>Uploading image to server</span>
+      </div>
+      <div class="progress-step" id="step-preprocess">
+        <div class="step-dot">2</div>
+        <span>Preprocessing · deskew · perspective · denoise · CLAHE · binarize</span>
+      </div>
+      <div class="progress-step" id="step-ocr">
+        <div class="step-dot">3</div>
+        <span>OCR extraction · confidence scoring</span>
+      </div>
+      <div class="progress-step" id="step-nlp">
+        <div class="step-dot">4</div>
+        <span>NLP post-processing · entity extraction · structure detection</span>
+      </div>
+      <div class="progress-step" id="step-done">
+        <div class="step-dot">✓</div>
+        <span>Pipeline complete</span>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="results-wrap">
+      <div class="result-header">
+        <h2>
+          <div class="success-dot"></div>
+          Extraction Complete
+        </h2>
+        <div class="export-btns">
+          <a href="#" class="export-btn" id="export-json-btn">⬇ JSON</a>
+          <a href="#" class="export-btn" id="export-pdf-btn">⬇ PDF Report</a>
+        </div>
+      </div>
+
+      <!-- Stat cards -->
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="val" id="stat-words">—</div>
+          <div class="lbl">Words Extracted</div>
+        </div>
+        <div class="stat-card">
+          <div class="val" id="stat-chars">—</div>
+          <div class="lbl">Characters</div>
+        </div>
+        <div class="stat-card">
+          <div class="val" id="stat-time">—</div>
+          <div class="lbl">Processing (s)</div>
+        </div>
+        <div class="stat-card">
+          <div class="val" id="stat-conf">—</div>
+          <div class="lbl">OCR Confidence
+            <div class="conf-bar-track">
+              <div class="conf-bar-fill" id="conf-bar" style="width:0%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div>
+        <div class="tabs">
+          <div class="tab active" data-tab="text">Extracted Text</div>
+          <div class="tab" data-tab="entities">Entities</div>
+          <div class="tab" data-tab="pipeline">Pipeline Info</div>
+        </div>
+
+        <div class="tab-pane active" id="tab-text">
+          <div class="text-output" id="text-output"></div>
+        </div>
+
+        <div class="tab-pane" id="tab-entities">
+          <div id="entities-output" class="entity-section"></div>
+        </div>
+
+        <div class="tab-pane" id="tab-pipeline">
+          <div style="margin-top: 16px;">
+            <div class="entity-type">Steps Applied</div>
+            <div class="steps-list" id="steps-list"></div>
+            <div class="entity-type" style="margin-top: 20px;">Original Size</div>
+            <div style="font-family: var(--mono); font-size: 13px; color: var(--text-dim);" id="orig-size">—</div>
+            <div class="entity-type" style="margin-top: 20px;">Processed Size</div>
+            <div style="font-family: var(--mono); font-size: 13px; color: var(--text-dim);" id="proc-size">—</div>
+            <div class="entity-type" style="margin-top: 20px;">Deskew Angle</div>
+            <div style="font-family: var(--mono); font-size: 13px; color: var(--text-dim);" id="deskew-angle">—</div>
+            <div class="entity-type" style="margin-top: 20px;">Document ID</div>
+            <div style="font-family: var(--mono); font-size: 11px; color: var(--text-dim); word-break: break-all;" id="doc-id-display">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let currentDocId = null;
+let enhanceEnabled = true;
+let selectedFile = null;
+
+// ── File input ──
+const fileInput = document.getElementById('file-input');
+const dropZone = document.getElementById('drop-zone');
+const previewWrap = document.getElementById('preview-wrap');
+const previewImg = document.getElementById('preview-img');
+const previewBadge = document.getElementById('preview-badge');
+const submitBtn = document.getElementById('submit-btn');
+const btnText = document.getElementById('btn-text');
+
+function setFile(file) {
+  if (!file) return;
+  selectedFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    previewImg.src = e.target.result;
+    previewWrap.style.display = 'block';
+    dropZone.style.display = 'none';
+    previewBadge.textContent = `${file.name} · ${(file.size / 1024).toFixed(0)}KB`;
+  };
+  reader.readAsDataURL(file);
+  submitBtn.disabled = false;
+  btnText.textContent = 'RUN PIPELINE';
+}
+
+fileInput.addEventListener('change', e => setFile(e.target.files[0]));
+
+['dragover','dragenter'].forEach(ev => {
+  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('dragging'); });
+});
+['dragleave','dragend'].forEach(ev => {
+  dropZone.addEventListener(ev, () => dropZone.classList.remove('dragging'));
+});
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragging');
+  setFile(e.dataTransfer.files[0]);
+});
+
+// ── Enhance toggle ──
+const enhToggle = document.getElementById('enhance-toggle');
+enhToggle.addEventListener('click', () => {
+  enhanceEnabled = !enhanceEnabled;
+  enhToggle.classList.toggle('active', enhanceEnabled);
+});
+
+// ── Tabs ──
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+// ── Progress helpers ──
+const STEPS = ['upload','preprocess','ocr','nlp','done'];
+
+function setStep(stepId) {
+  STEPS.forEach((s, i) => {
+    const el = document.getElementById(`step-${s}`);
+    el.classList.remove('active', 'done');
+    const idx = STEPS.indexOf(stepId);
+    if (i < idx) el.classList.add('done');
+    else if (i === idx) el.classList.add('active');
+  });
+}
+
+function showProgress() {
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('results-wrap').style.display = 'none';
+  const pw = document.getElementById('progress-wrap');
+  pw.style.display = 'flex';
+  STEPS.forEach(s => {
+    const el = document.getElementById(`step-${s}`);
+    el.classList.remove('active', 'done');
+  });
+}
+
+function showResults() {
+  document.getElementById('progress-wrap').style.display = 'none';
+  const rw = document.getElementById('results-wrap');
+  rw.style.display = 'flex';
+}
+
+// ── Submit ──
+submitBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  const errorBox = document.getElementById('error-box');
+  errorBox.style.display = 'none';
+
+  submitBtn.disabled = true;
+  btnText.textContent = 'PROCESSING…';
+  showProgress();
+  setStep('upload');
+
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+  formData.append('ocr_engine', document.getElementById('ocr-engine').value);
+  formData.append('language', document.getElementById('language').value);
+  formData.append('enhance', enhanceEnabled ? 'true' : 'false');
+
+  try {
+    // Simulate step timings for UI
+    await delay(400); setStep('preprocess');
+    await delay(600); setStep('ocr');
+
+    const res = await fetch('/api/upload', { method: 'POST', body: formData });
+    setStep('nlp');
+    await delay(500); setStep('done');
+    await delay(400);
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Unknown error');
+
+    renderResults(data);
+    showResults();
+  } catch (err) {
+    document.getElementById('progress-wrap').style.display = 'none';
+    document.getElementById('empty-state').style.display = 'flex';
+    errorBox.style.display = 'block';
+    errorBox.textContent = '⚠ ' + err.message;
+  } finally {
+    submitBtn.disabled = false;
+    btnText.textContent = 'RUN PIPELINE';
+  }
+});
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function renderResults(data) {
+  currentDocId = data.doc_id;
+  const output = data.output || {};
+  const ocr = data.ocr || {};
+  const prep = data.preprocessing || {};
+
+  // Stats
+  document.getElementById('stat-words').textContent = (output.word_count || 0).toLocaleString();
+  document.getElementById('stat-chars').textContent = (output.char_count || 0).toLocaleString();
+  document.getElementById('stat-time').textContent = data.processing_time_s ?? '—';
+  const conf = ocr.confidence || 0;
+  document.getElementById('stat-conf').childNodes[0].textContent = conf.toFixed(1) + '%';
+  setTimeout(() => {
+    document.getElementById('conf-bar').style.width = conf + '%';
+  }, 100);
+
+  // Text
+  document.getElementById('text-output').textContent =
+    output.cleaned_text || ocr.raw_text || '(No text extracted)';
+
+  // Entities
+  const entOut = document.getElementById('entities-output');
+  entOut.innerHTML = '';
+  const ents = output.entities || {};
+  let hasAny = false;
+  for (const [type, vals] of Object.entries(ents)) {
+    if (!vals.length) continue;
+    hasAny = true;
+    const label = document.createElement('div');
+    label.className = 'entity-type';
+    label.textContent = type.replace(/_/g, ' ');
+    entOut.appendChild(label);
+    const chips = document.createElement('div');
+    chips.className = 'chips';
+    vals.forEach(v => {
+      const c = document.createElement('span');
+      c.className = 'chip';
+      c.textContent = v;
+      chips.appendChild(c);
+    });
+    entOut.appendChild(chips);
+  }
+  if (!hasAny) {
+    entOut.innerHTML = '<p style="color: var(--text-dim); font-size:13px; margin-top:16px;">No entities detected.</p>';
+  }
+
+  // Pipeline
+  const stepsList = document.getElementById('steps-list');
+  stepsList.innerHTML = '';
+  (prep.steps_applied || []).forEach(s => {
+    const c = document.createElement('div');
+    c.className = 'step-chip';
+    c.textContent = s.replace(/_/g, ' ');
+    stepsList.appendChild(c);
+  });
+
+  const os = prep.original_size || [];
+  const ps = prep.processed_size || [];
+  document.getElementById('orig-size').textContent =
+    os.length ? `${os[1]} × ${os[0]} px` : '—';
+  document.getElementById('proc-size').textContent =
+    ps.length ? `${ps[1]} × ${ps[0]} px` : '—';
+  document.getElementById('deskew-angle').textContent =
+    prep.deskew_angle_deg !== undefined ? `${prep.deskew_angle_deg}°` : '—';
+  document.getElementById('doc-id-display').textContent = data.doc_id || '—';
+
+  // Export links
+  document.getElementById('export-json-btn').href = `/api/export/${data.doc_id}/json`;
+  document.getElementById('export-pdf-btn').href = `/api/export/${data.doc_id}/pdf`;
+}
+</script>
+</body>
+</html>
